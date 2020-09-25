@@ -34,7 +34,6 @@ void LicensePlate::drawLicensePlate(cv::Mat& frame, std::vector<std::vector<cv::
     if (aspect_ratio >= MIN_AR && aspect_ratio <= MAX_AR && 
         rectangle_bounding.width < 0.5 * (float) frame.cols && rectangle_bounding.height < 0.5 * (float) frame.rows)  {
       float difference = rectangle_bounding.area() - contourArea(currentCandidate);
-      std::cout << difference << std::endl;
       if (difference < RECT_DIFF) {
         non_overlapping_rect.push_back(rectangle_bounding);
       } 
@@ -121,7 +120,7 @@ void LicensePlate::viewer(const cv::Mat& frame, std::string title) {
 }
 
 int main( int argc, char** argv ) {
-  std::string filename = "004.jpg";
+  std::string filename = "001.jpg";
   LicensePlate lp;
 
   // Image input
