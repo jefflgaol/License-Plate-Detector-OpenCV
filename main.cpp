@@ -2,7 +2,7 @@
 #include <iostream>
 #include "main.h"
 
-#define MIN_AR 2        // Minimum aspect ratio
+#define MIN_AR 1        // Minimum aspect ratio
 #define MAX_AR 6        // Maximum aspect ratio
 #define KEEP 5          // Limit the number of license plates
 #define RECT_DIFF 2000  // Set the difference between contour and rectangle
@@ -11,8 +11,8 @@
 cv::RNG rng(12345);
 
 bool compareContourAreas (std::vector<cv::Point>& contour1, std::vector<cv::Point>& contour2) {
-    double i = fabs(contourArea(cv::Mat(contour1)));
-    double j = fabs(contourArea(cv::Mat(contour2)));
+    const double i = fabs(contourArea(cv::Mat(contour1)));
+    const double j = fabs(contourArea(cv::Mat(contour2)));
     return (i < j);
 }
 
@@ -21,12 +21,13 @@ void LicensePlate::grayscale(cv::Mat& frame) {
 }
 
 void LicensePlate::drawLicensePlate(cv::Mat& frame, std::vector<std::vector<cv::Point>>& candidates) {
-  int width = frame.cols;
-  int height = frame.rows;
-  float ratio_width = width / (float) 512;    // WARNING! Aspect ratio may affect the performance (TO DO LIST)
-  float ratio_height = height / (float) 512;  // WARNING! Aspect ratio may affect the performance
+  const int width = frame.cols;
+  const int height = frame.rows;
+  const float ratio_width = width / (float) 512;    // WARNING! Aspect ratio may affect the performance (TO DO LIST)
+  const float ratio_height = height / (float) 512;  // WARNING! Aspect ratio may affect the performance
 
   // Convert to rectangle and decide which one violate the aspect ratio and dimension relative to image input dimension.
+  /*
   std::vector<cv::Rect> non_overlapping_rect;
   for (std::vector<cv::Point> currentCandidate : candidates) {
     cv::Rect rectangle_bounding = cv::boundingRect(currentCandidate);
@@ -39,23 +40,53 @@ void LicensePlate::drawLicensePlate(cv::Mat& frame, std::vector<std::vector<cv::
       } 
     }
   }
+  */
 
+  // Convert to rectangle and also filter out the non-rectangle-shape.
+  std::vector<cv::Rect> rectangles;
+  for (std::vector<cv::Point> currentCandidate : candidates) {
+    cv::Rect temp = cv::boundingRect(currentCandidate);
+    float difference = temp.area() - cv::contourArea(currentCandidate);
+    if (difference < RECT_DIFF) {
+      rectangles.push_back(temp);
+    }
+  }
+
+  // Remove rectangle with 好奇怪 shape.
+  rectangles.erase(std::remove_if(rectangles.begin(), rectangles.end(), [](cv::Rect temp) {
+    const float aspect_ratio = temp.width / (float) temp.height;
+    return aspect_ratio < MIN_AR || aspect_ratio > MAX_AR;
+  }), rectangles.end());
+
+  /*
   // Find overlapping rectangle and draw it (also return to the original dimension).
-  for (int i = 0; i < non_overlapping_rect.size(); i++) {
+  for (int i = 0; i < rectangles.size(); i++) {
     bool intersects = false;
-    for (int j = i + 1; j < non_overlapping_rect.size(); j++) {
+    for (int j = i + 1; j < rectangles.size(); j++) {
       if (i == j) {
         break;
       }
-      intersects = ((non_overlapping_rect[i] & non_overlapping_rect[j]).area() > 0);
+      intersects = ((rectangles[i] & rectangles[j]).area() > 0);
       if (intersects) {
         break;
       }
     }
     if (!intersects) {
       cv::Scalar color = cv::Scalar(rng.uniform(0, 255), rng.uniform(0, 255), rng.uniform(0, 255));
-      cv::rectangle(frame, cv::Point(non_overlapping_rect[i].x * ratio_width, non_overlapping_rect[i].y * ratio_height), cv::Point((non_overlapping_rect[i].x + non_overlapping_rect[i].width) * ratio_width, (non_overlapping_rect[i].y + non_overlapping_rect[i].height) * ratio_height), color, 3, cv::LINE_8, 0);
+      cv::rectangle(frame, cv::Point(rectangles[i].x * ratio_width, rectangles[i].y * ratio_height), cv::Point((rectangles[i].x + rectangles[i].width) * ratio_width, (rectangles[i].y + rectangles[i].height) * ratio_height), color, 3, cv::LINE_8, 0);
     }
+  }
+  */
+
+  /*
+  rectangles.erase(std::max_element(rectangles.begin(), rectangles.end(), [](cv::Rect left, cv::Rect right) {
+    return left.area() < right.area();
+  }));
+  */
+
+  for (cv::Rect rectangle : rectangles) {
+    cv::Scalar color = cv::Scalar(rng.uniform(0, 255), rng.uniform(0, 255), rng.uniform(0, 255));
+    cv::rectangle(frame, cv::Point(rectangle.x * ratio_width, rectangle.y * ratio_height), cv::Point((rectangle.x + rectangle.width) * ratio_width, (rectangle.y + rectangle.height) * ratio_height), color, 3, cv::LINE_8, 0);
   }
 }
 
@@ -120,10 +151,17 @@ void LicensePlate::viewer(const cv::Mat& frame, std::string title) {
 }
 
 int main( int argc, char** argv ) {
-  std::string filename = "001.jpg";
+  // Instantiate LicensePlate object
   LicensePlate lp;
 
-  // Image input
+/*
+ __     __    __     ______     ______     ______    
+/\ \   /\ "-./  \   /\  __ \   /\  ___\   /\  ___\   
+\ \ \  \ \ \-./\ \  \ \  __ \  \ \ \__ \  \ \  __\   
+ \ \_\  \ \_\ \ \_\  \ \_\ \_\  \ \_____\  \ \_____\ 
+  \/_/   \/_/  \/_/   \/_/\/_/   \/_____/   \/_____/ 
+*/
+  std::string filename = "001.jpg";
   cv::Mat image;
   image = cv::imread(filename, cv::IMREAD_COLOR);
   if(!image.data ) {
@@ -133,21 +171,16 @@ int main( int argc, char** argv ) {
   std::vector<std::vector<cv::Point>> candidates = lp.locateCandidates(image);
   lp.drawLicensePlate(image, candidates);
   lp.viewer(image, "Frame");
-
-  /*
-  // Debugging
-  cv::Mat drawing = cv::Mat::zeros(image.size(), CV_8UC3);
-  std::vector<cv::Vec4i> hierarchy;
-  for (int i = 0; i < candidates.size(); i++) {
-    cv::Scalar color = cv::Scalar(rng.uniform(0, 255), rng.uniform(0, 255), rng.uniform(0, 255));
-    cv::drawContours(drawing, candidates, i, color, 2, 8, hierarchy, 0, cv::Point() );
-  }
-  cv::imshow("Drawing", drawing);
-  */
   cv::waitKey(0);
 
   /*
-  // Video input
+ __   __   __     _____     ______     ______    
+/\ \ / /  /\ \   /\  __-.  /\  ___\   /\  __ \   
+\ \ \'/   \ \ \  \ \ \/\ \ \ \  __\   \ \ \/\ \  
+ \ \__|    \ \_\  \ \____-  \ \_____\  \ \_____\ 
+  \/_/      \/_/   \/____/   \/_____/   \/_____/ 
+  */
+  /*
   cv::VideoCapture cap("demo.mp4");
   if (!cap.isOpened()) {
     std::cout << "Error opening video stream or file" << std::endl;
@@ -166,14 +199,14 @@ int main( int argc, char** argv ) {
     // Processing technique
     std::vector<std::vector<cv::Point>> candidates = lp.locateCandidates(image);
 
-    // cv::Mat drawing = cv::Mat::zeros(image.size(), CV_8UC3);
-    // std::vector<cv::Vec4i> hierarchy;
-    // for (int i = 0; i < candidates.size(); i++) {
-    //   cv::Scalar color = cv::Scalar(rng.uniform(0, 255), rng.uniform(0, 255), rng.uniform(0, 255));
-    //   cv::drawContours(drawing, candidates, i, color, 2, 8, hierarchy, 0, cv::Point() );
-    // }
-    // cv::imshow("Drawing", drawing);
-    // cv::waitKey(0);
+    cv::Mat drawing = cv::Mat::zeros(image.size(), CV_8UC3);
+    std::vector<cv::Vec4i> hierarchy;
+    for (int i = 0; i < candidates.size(); i++) {
+      cv::Scalar color = cv::Scalar(rng.uniform(0, 255), rng.uniform(0, 255), rng.uniform(0, 255));
+      cv::drawContours(drawing, candidates, i, color, 2, 8, hierarchy, 0, cv::Point() );
+    }
+    cv::imshow("Drawing", drawing);
+    cv::waitKey(0);
 
     lp.drawLicensePlate(image, candidates);
     lp.viewer(image, "Frame");
@@ -186,7 +219,7 @@ int main( int argc, char** argv ) {
 }
 
 /*
-// Debug for drawing contours
+// Debug code for drawing contours
 cv::Mat drawing = cv::Mat::zeros(image.size(), CV_8UC3);
 std::vector<cv::Vec4i> hierarchy;
 for (int i = 0; i < candidates.size(); i++) {
